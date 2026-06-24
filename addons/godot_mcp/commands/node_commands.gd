@@ -375,8 +375,11 @@ func _select_nodes(params: Dictionary) -> Dictionary:
 		else:
 			selection.add_node(node)
 
-	if mode != "remove" and not resolved_nodes.is_empty():
-		var edited_node: Node = resolved_nodes[resolved_nodes.size() - 1]
+	# edit_node() and inspect_object() both reset EditorSelection to a single
+	# node, which would collapse a multi-node selection down to the last node.
+	# Only focus/inspect when exactly one node was selected.
+	if mode != "remove" and resolved_nodes.size() == 1:
+		var edited_node: Node = resolved_nodes[0]
 		if focus:
 			EditorInterface.edit_node(edited_node)
 		if inspect:
