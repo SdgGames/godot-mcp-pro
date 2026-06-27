@@ -30,6 +30,8 @@ var _log_scroll: ScrollContainer
 
 # Clients tab
 var _port_labels: Dictionary = {}  # port -> {icon: Label, label: Label}
+var _clients_vbox: VBoxContainer
+var _built_band: Vector2i = Vector2i(-1, -1)  # band the rows were last built for
 
 # Tools tab
 var _filter_edit: LineEdit
@@ -130,14 +132,20 @@ func _build_activity_tab() -> void:
 	_log_scroll.add_child(_log_container)
 
 
-# Resolve the active port band from the websocket server (set per-project via
-# ProjectSettings), falling back to the constants above if it isn't available yet.
+# Resolve the active port band. Source of truth is the per-project ProjectSettings
+# (set in project.godot), since the panel is built in _ready() before the websocket
+# server is assigned via setup(). Fall back to the server's resolved fields, then to
+# the constants above.
 func _port_band() -> Vector2i:
+	var lo: int = int(ProjectSettings.get_setting("mcp/network/base_port", 0))
+	var hi: int = int(ProjectSettings.get_setting("mcp/network/max_port", 0))
+	if lo > 0 and hi >= lo:
+		return Vector2i(lo, hi)
 	if websocket_server:
-		var lo: int = int(websocket_server.get("base_port"))
-		var hi: int = int(websocket_server.get("max_port"))
-		if lo > 0 and hi >= lo:
-			return Vector2i(lo, hi)
+		var slo: int = int(websocket_server.get("base_port"))
+		var shi: int = int(websocket_server.get("max_port"))
+		if slo > 0 and shi >= slo:
+			return Vector2i(slo, shi)
 	return Vector2i(BASE_PORT, MAX_PORT)
 
 
@@ -145,11 +153,21 @@ func _build_clients_tab() -> void:
 	var vbox := VBoxContainer.new()
 	vbox.name = "Clients"
 	_tab_container.add_child(vbox)
+	_clients_vbox = vbox
+	_rebuild_client_rows(_port_band())
 
-	var band := _port_band()
+
+# (Re)build one row per port in the band. Called again automatically when the band
+# changes (e.g. once the project's ProjectSettings band becomes available).
+func _rebuild_client_rows(band: Vector2i) -> void:
+	for child in _clients_vbox.get_children():
+		_clients_vbox.remove_child(child)
+		child.queue_free()
+	_port_labels.clear()
+
 	for p in range(band.x, band.y + 1):
 		var row := HBoxContainer.new()
-		vbox.add_child(row)
+		_clients_vbox.add_child(row)
 
 		var icon := Label.new()
 		icon.text = "○"
@@ -161,6 +179,8 @@ func _build_clients_tab() -> void:
 		row.add_child(lbl)
 
 		_port_labels[p] = {"icon": icon, "label": lbl}
+
+	_built_band = band
 
 
 func _build_tools_tab() -> void:
@@ -251,6 +271,13 @@ func _process(_delta: float) -> void:
 
 
 func _update_clients_tab() -> void:
+	# Rebuild the rows if the configured band changed since they were built (the
+	# panel is created before the project's band is known, so the first build uses
+	# the fallback constants).
+	var band := _port_band()
+	if band != _built_band and _clients_vbox != null:
+		_rebuild_client_rows(band)
+
 	var connected_ports: Array[int] = []
 	if websocket_server.has_method("get_connected_ports"):
 		connected_ports = websocket_server.get_connected_ports()
