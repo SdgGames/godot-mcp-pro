@@ -14,8 +14,18 @@ signal command_completed(method: String, success: bool, response: String, source
 
 var command_router: Node
 
-const BASE_PORT := 6505
-const MAX_PORT := 6514
+## Port band defaults. Per-project overrides come from ProjectSettings so this shared
+## addon submodule stays identical across projects — each project sets its own band in
+## project.godot to avoid cross-project editor/AI connection collisions.
+const DEFAULT_BASE_PORT := 6505
+const DEFAULT_MAX_PORT := 6514
+const SETTING_BASE_PORT := "mcp/network/base_port"
+const SETTING_MAX_PORT := "mcp/network/max_port"
+
+# Active band, resolved from ProjectSettings in start_server().
+var base_port: int = DEFAULT_BASE_PORT
+var max_port: int = DEFAULT_MAX_PORT
+
 const RECONNECT_INTERVAL := 3.0
 const BUFFER_SIZE := 16 * 1024 * 1024  # 16MB
 const PING_INTERVAL := 5.0  # send ping every N seconds while connected
@@ -34,11 +44,17 @@ var _running: bool = false
 
 func start_server() -> void:
 	_running = true
-	for p in range(BASE_PORT, MAX_PORT + 1):
+	base_port = int(ProjectSettings.get_setting(SETTING_BASE_PORT, DEFAULT_BASE_PORT))
+	max_port = int(ProjectSettings.get_setting(SETTING_MAX_PORT, DEFAULT_MAX_PORT))
+	if max_port < base_port:
+		push_warning("[MCP] %s (%d) < %s (%d) — falling back to default band" % [SETTING_MAX_PORT, max_port, SETTING_BASE_PORT, base_port])
+		base_port = DEFAULT_BASE_PORT
+		max_port = DEFAULT_MAX_PORT
+	for p in range(base_port, max_port + 1):
 		_connected[p] = false
 		_timers[p] = 0.0
 		_try_connect(p)
-	print("[MCP] Connecting to ports %d-%d" % [BASE_PORT, MAX_PORT])
+	print("[MCP] Connecting to ports %d-%d" % [base_port, max_port])
 
 
 func stop_server() -> void:
@@ -99,7 +115,7 @@ func _process(delta: float) -> void:
 	if not _running:
 		return
 
-	for p in range(BASE_PORT, MAX_PORT + 1):
+	for p in range(base_port, max_port + 1):
 		var ws: WebSocketPeer = _peers.get(p)
 
 		# No peer - try reconnect on timer

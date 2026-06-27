@@ -130,12 +130,24 @@ func _build_activity_tab() -> void:
 	_log_scroll.add_child(_log_container)
 
 
+# Resolve the active port band from the websocket server (set per-project via
+# ProjectSettings), falling back to the constants above if it isn't available yet.
+func _port_band() -> Vector2i:
+	if websocket_server:
+		var lo: int = int(websocket_server.get("base_port"))
+		var hi: int = int(websocket_server.get("max_port"))
+		if lo > 0 and hi >= lo:
+			return Vector2i(lo, hi)
+	return Vector2i(BASE_PORT, MAX_PORT)
+
+
 func _build_clients_tab() -> void:
 	var vbox := VBoxContainer.new()
 	vbox.name = "Clients"
 	_tab_container.add_child(vbox)
 
-	for p in range(BASE_PORT, MAX_PORT + 1):
+	var band := _port_band()
+	for p in range(band.x, band.y + 1):
 		var row := HBoxContainer.new()
 		vbox.add_child(row)
 
@@ -218,7 +230,8 @@ func _process(_delta: float) -> void:
 
 	var any_stale := false
 	if websocket_server.has_method("is_port_stale"):
-		for p in range(BASE_PORT, MAX_PORT + 1):
+		var band := _port_band()
+		for p in range(band.x, band.y + 1):
 			if websocket_server.is_port_stale(p):
 				any_stale = true
 				break
