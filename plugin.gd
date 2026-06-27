@@ -48,7 +48,7 @@ func _enter_tree() -> void:
 	var ver := "unknown"
 	if cfg.load("res://addons/godot_mcp/plugin.cfg") == OK:
 		ver = cfg.get_value("plugin", "version", "unknown")
-	print("[MCP] Godot MCP Pro v%s started (ports 6505-6514)" % ver)
+	print("[MCP] Godot MCP Pro v%s started (ports %d-%d)" % [ver, websocket_server.base_port, websocket_server.max_port])
 
 
 func _exit_tree() -> void:
