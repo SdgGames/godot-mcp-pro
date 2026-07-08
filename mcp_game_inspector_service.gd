@@ -748,13 +748,29 @@ func _safe_get(node: Node, prop: String, default: Variant = null) -> Variant:
 	temp_node.set_script(script)
 	get_tree().current_scene.add_child(temp_node)
 
-	var output: Variant = null
-	if temp_node.has_method("run"):
-		output = temp_node.run()
+	if not temp_node.has_method("run"):
+		temp_node.queue_free()
+		_write_response({"output": [], "return_value": null})
+		return
 
+	# The injected script may use `await`, which makes run() a coroutine. A
+	# direct un-awaited call throws "Trying to call an async function without
+	# await" (and foregrounds the editor) AND writes the response before the
+	# script finishes. Launch the run deferred as a coroutine: call_deferred
+	# starts it without that error and keeps _handle_request/_process sync.
+	# Async command: the deferred run writes the response later, so clear the
+	# watchdog flag now or crash-recovery fires in the meantime (lines 60-69).
+	call_deferred("_run_script_and_respond", temp_node)
+	_pending_command = false
+
+
+## Coroutine tail of execute_script: `await` handles both a coroutine run()
+## (suspends until done) and a plain run() (returns immediately in Godot 4),
+## so the response is written only after the injected script fully completes.
+func _run_script_and_respond(temp_node: Node) -> void:
+	var output: Variant = await temp_node.run()
 	var mcp_output: Array = temp_node.get("_mcp_output") if temp_node.get("_mcp_output") is Array else []
 	temp_node.queue_free()
-
 	_write_response({
 		"output": mcp_output,
 		"return_value": str(output) if output != null else null,
