@@ -53,6 +53,15 @@ var _moveto_keys_held: Array = []  # Track injected keys for guaranteed release
 
 
 func _ready() -> void:
+	# Dev tooling: there is no editor in an exported build. Free before any
+	# per-frame work is registered, so a player build pays nothing for this.
+	# This script must ship and neuter itself rather than be excluded from the
+	# export: plugin.gd bakes the [autoload] entry into project.godot during the
+	# export itself, and an autoload pointing at a missing script errors on
+	# startup. The rest of the addon IS excluded by the export preset.
+	if not OS.has_feature("editor"):
+		queue_free()
+		return
 	process_mode = Node.PROCESS_MODE_ALWAYS
 
 
