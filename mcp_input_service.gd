@@ -12,10 +12,11 @@ var _sequence_frames_waited: int = 0
 func _ready() -> void:
 	# Dev tooling: there is no editor in an exported build. Free before any
 	# per-frame work is registered, so a player build pays nothing for this.
-	# This script must ship and neuter itself rather than be excluded from the
-	# export: plugin.gd bakes the [autoload] entry into project.godot during the
-	# export itself, and an autoload pointing at a missing script errors on
-	# startup. The rest of the addon IS excluded by the export preset.
+	# plugin.gd takes the [autoload] entry out of every export (MCPExportFilter),
+	# so this node normally does not exist there at all. The check stays for a
+	# project that is exported without the editor plugin running while its
+	# project.godot still lists the entry: the script then has to ship (an
+	# autoload pointing at a missing script errors on startup) and end itself.
 	if not OS.has_feature("editor"):
 		queue_free()
 		return

@@ -20,6 +20,59 @@ var status_panel: Control
 var auto_dismiss_dialogs: bool = false
 # Track which autoloads THIS session injected (vs project-owned)
 var _session_injected_autoloads: Array[String] = []
+var _export_filter: MCPExportFilter
+
+
+# Keeps the MCP runtime services out of exported projects.
+#
+# The services are development tools: they answer this editor plugin through
+# files in the user data folder, which only works for a game started from the
+# editor. An exported build has no editor to talk to. Their autoload entries
+# live in the project settings (injected below, and written to project.godot
+# while the editor runs), and an export stores the project settings that are in
+# memory at that moment. So the entries are taken out when an export begins and
+# put back when it ends. Nothing is saved in between: project.godot and the
+# editor's own state are the same before and after.
+class MCPExportFilter extends EditorExportPlugin:
+	# [setting name, value, position in the autoload order] of each entry taken out.
+	var _removed: Array[Array] = []
+
+
+	func _get_name() -> String:
+		return "MCPExportFilter"
+
+
+	func _export_begin(_features: PackedStringArray, _is_debug: bool, _path: String, _flags: int) -> void:
+		_removed.clear()
+		for entry: Array in _MCP_AUTOLOADS:
+			var key: String = entry[0]
+			if not ProjectSettings.has_setting(key):
+				continue
+			var value: String = ProjectSettings.get_setting(key)
+			# Only the services themselves: a project may use one of these
+			# names for an autoload of its own.
+			if _autoload_path(value) != entry[1]:
+				continue
+			_removed.append([key, value, ProjectSettings.get_order(key)])
+			ProjectSettings.set_setting(key, null)
+
+
+	func _export_end() -> void:
+		for entry: Array in _removed:
+			ProjectSettings.set_setting(entry[0], entry[1])
+			ProjectSettings.set_order(entry[0], entry[2])
+		_removed.clear()
+
+
+	# The script or scene an autoload entry points at ("*res://..." or "*uid://...").
+	static func _autoload_path(value: String) -> String:
+		var path := value.trim_prefix("*")
+		if path.begins_with("uid://"):
+			var id := ResourceUID.text_to_id(path)
+			if ResourceUID.has_id(id):
+				path = ResourceUID.get_id_path(id)
+		return path
+
 
 func _enter_tree() -> void:
 	# Create command router
@@ -43,6 +96,11 @@ func _enter_tree() -> void:
 	# Inject MCP autoloads into project settings
 	_inject_autoloads()
 
+	# ...and keep them out of every export (see MCPExportFilter).
+	# The cast works around https://github.com/godotengine/godot/issues/73525
+	_export_filter = (MCPExportFilter as Variant).new()
+	add_export_plugin(_export_filter)
+
 	websocket_server.start_server()
 	var cfg := ConfigFile.new()
 	var ver := "unknown"
@@ -52,6 +110,10 @@ func _enter_tree() -> void:
 
 
 func _exit_tree() -> void:
+	if _export_filter:
+		remove_export_plugin(_export_filter)
+		_export_filter = null
+
 	# Remove MCP autoloads and clean up temp files
 	_remove_autoloads()
 	_cleanup_temp_files()
